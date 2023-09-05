@@ -197,7 +197,7 @@ class VAEDecodePipe:
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {"samples": ("LATENT", ), "vae": ("VAE", )}}
-    RETURN_TYPES = ("IMAGE",)
+    RETURN_TYPES = ("IMAGE","VAE",)
     FUNCTION = "decode"
 
     CATEGORY = "braintacles/latent"
@@ -212,7 +212,7 @@ class VAEDecodeTiledPipe:
         return {"required": {"samples": ("LATENT", ), "vae": ("VAE", ),
                              "tile_size": ("INT", {"default": 512, "min": 320, "max": 4096, "step": 64})
                              }}
-    RETURN_TYPES = ("IMAGE",)
+    RETURN_TYPES = ("IMAGE","VAE",)
     FUNCTION = "decode"
 
     CATEGORY = "braintacles/latent"
@@ -225,7 +225,7 @@ class VAEEncodePipe:
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {"pixels": ("IMAGE", ), "vae": ("VAE", )}}
-    RETURN_TYPES = ("LATENT",)
+    RETURN_TYPES = ("LATENT","VAE",)
     FUNCTION = "encode"
 
     CATEGORY = "braintacles/latent"
@@ -252,7 +252,7 @@ class VAEEncodeTiledPipe:
         return {"required": {"pixels": ("IMAGE", ), "vae": ("VAE", ),
                              "tile_size": ("INT", {"default": 512, "min": 320, "max": 4096, "step": 64})
                              }}
-    RETURN_TYPES = ("LATENT",)
+    RETURN_TYPES = ("LATENT","VAE",)
     FUNCTION = "encode"
 
     CATEGORY = "braintacles/latent"
