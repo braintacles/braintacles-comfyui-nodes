@@ -41,7 +41,6 @@ class CLIPTextEncodeSDXL_Multi_IO:
         if latent is not None:
             width = latent["samples"].shape[-1] * 8
             height = latent["samples"].shape[-2] * 8
-            print("Latent is not none, width and height are ", width, height)
         cond, pooled = self.encode_with_clip(clip, text_g, text_l)
         return_list = [
             [[cond, {"pooled_output": pooled, "width": width, "height": height,
@@ -106,7 +105,6 @@ class CLIPTextEncodeSDXL_Pipe:
         if latent is not None:
             width = latent["samples"].shape[-1] * 8
             height = latent["samples"].shape[-2] * 8
-            print("Latent is not none, width and height are ", width, height)
         cond, pooled = self.encode_with_clip(clip, text_g, text_l)
         return_list = [
             [[cond, {"pooled_output": pooled, "width": width, "height": height,
