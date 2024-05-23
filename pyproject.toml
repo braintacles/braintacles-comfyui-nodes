@@ -9,6 +9,6 @@ Repository = "https://github.com/braintacles/braintacles-comfyui-nodes"
 #  Used by Comfy Registry https://comfyregistry.org
 
 [tool.comfy]
-PublisherId = ""
+PublisherId = "braintacles"
 DisplayName = "braintacles-comfyui-nodes"
 Icon = ""
