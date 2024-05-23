@@ -9,3 +9,5 @@ ComfyUI Nodes
     - Write an arbitrary aspect ratio like `2.35:1` or `16:9` etc, choose your orientation and get a latent, width and height outputs as well as the aspect ratio float
 - Random Find and Replace
     - Useful for those of us with prompt generator setups.
+- Interval Sampler
+    - Interval sampling between two models at specified _n_ steps
