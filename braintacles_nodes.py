@@ -1,6 +1,8 @@
 import torch
 import random
-
+import comfy.samplers
+import comfy.sample
+import latent_preview
 
 class CLIPTextEncodeSDXL_Multi_IO:
     @classmethod
@@ -191,84 +193,72 @@ class RandomFindAndReplace:
         return (prompt, choice, seed,)
 
 
-class VAEDecodePipe:
+def common_ksampler(model, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent, denoise=1.0, disable_noise=False, start_step=None, last_step=None, force_full_denoise=False):
+    latent_image = latent["samples"]
+    if disable_noise:
+        noise = torch.zeros(latent_image.size(), dtype=latent_image.dtype, layout=latent_image.layout, device="cpu")
+    else:
+        batch_inds = latent["batch_index"] if "batch_index" in latent else None
+        noise = comfy.sample.prepare_noise(latent_image, seed, batch_inds)
+
+    noise_mask = None
+    if "noise_mask" in latent:
+        noise_mask = latent["noise_mask"]
+
+    callback = latent_preview.prepare_callback(model, steps)
+    disable_pbar = not comfy.utils.PROGRESS_BAR_ENABLED
+    samples = comfy.sample.sample(model, noise, steps, cfg, sampler_name, scheduler, positive, negative, latent_image,
+                                  denoise=denoise, disable_noise=disable_noise, start_step=start_step, last_step=last_step,
+                                  force_full_denoise=force_full_denoise, noise_mask=noise_mask, callback=callback, disable_pbar=disable_pbar, seed=seed)
+    out = latent.copy()
+    out["samples"] = samples
+    return (out, )
+
+class IntervalSampler:
     @classmethod
     def INPUT_TYPES(s):
-        return {"required": {"samples": ("LATENT", ), "vae": ("VAE", )}}
-    RETURN_TYPES = ("IMAGE","VAE",)
-    FUNCTION = "decode"
+        return {"required":
+                    {"modelA": ("MODEL",),
+                    "modelB": ("MODEL",),
+                    "noise_seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
+                    "steps": ("INT", {"default": 20, "min": 1, "max": 10000}),
+                    "interval": ("INT", {"default": 1, "min": 1, "max": 1000}),
+                    "cfg": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 100.0, "step":0.1, "round": 0.01}),
+                    "sampler_name": (comfy.samplers.KSampler.SAMPLERS, ),
+                    "scheduler": (comfy.samplers.KSampler.SCHEDULERS, ),
+                    "positiveA": ("CONDITIONING", ),
+                    "negativeA": ("CONDITIONING", ),
+                    "positiveB": ("CONDITIONING", ),
+                    "negativeB": ("CONDITIONING", ),
+                    "latent_image": ("LATENT", )
+                     }
+                }
 
-    CATEGORY = "braintacles/latent"
+    RETURN_TYPES = ("LATENT",)
+    FUNCTION = "sample"
 
-    def decode(self, vae, samples):
-        return (vae.decode(samples["samples"]), vae, )
+    CATEGORY = "braintacles/sampling"
 
-
-class VAEDecodeTiledPipe:
-    @classmethod
-    def INPUT_TYPES(s):
-        return {"required": {"samples": ("LATENT", ), "vae": ("VAE", ),
-                             "tile_size": ("INT", {"default": 1024, "min": 320, "max": 4096, "step": 64})
-                             }}
-    RETURN_TYPES = ("IMAGE","VAE",)
-    FUNCTION = "decode"
-
-    CATEGORY = "braintacles/latent"
-
-    def decode(self, vae, samples, tile_size):
-        return (vae.decode_tiled(samples["samples"], tile_x=tile_size // 8, tile_y=tile_size // 8, ), vae, )
-
-
-class VAEEncodePipe:
-    @classmethod
-    def INPUT_TYPES(s):
-        return {"required": {"pixels": ("IMAGE", ), "vae": ("VAE", )}}
-    RETURN_TYPES = ("LATENT","VAE",)
-    FUNCTION = "encode"
-
-    CATEGORY = "braintacles/latent"
-
-    @staticmethod
-    def vae_encode_crop_pixels(pixels):
-        x = (pixels.shape[1] // 8) * 8
-        y = (pixels.shape[2] // 8) * 8
-        if pixels.shape[1] != x or pixels.shape[2] != y:
-            x_offset = (pixels.shape[1] % 8) // 2
-            y_offset = (pixels.shape[2] % 8) // 2
-            pixels = pixels[:, x_offset:x + x_offset, y_offset:y + y_offset, :]
-        return pixels
-
-    def encode(self, vae, pixels):
-        pixels = self.vae_encode_crop_pixels(pixels)
-        t = vae.encode(pixels[:, :, :, :3])
-        return ({"samples": t}, vae, )
-
-
-class VAEEncodeTiledPipe:
-    @classmethod
-    def INPUT_TYPES(s):
-        return {"required": {"pixels": ("IMAGE", ), "vae": ("VAE", ),
-                             "tile_size": ("INT", {"default": 1024, "min": 320, "max": 4096, "step": 64})
-                             }}
-    RETURN_TYPES = ("LATENT","VAE",)
-    FUNCTION = "encode"
-
-    CATEGORY = "braintacles/latent"
-
-    def encode(self, vae, pixels, tile_size):
-        pixels = VAEEncodePipe.vae_encode_crop_pixels(pixels)
-        t = vae.encode_tiled(pixels[:, :, :, :3],
-                             tile_x=tile_size, tile_y=tile_size, )
-        return ({"samples": t}, vae, )
-
+    def sample(self, modelA, modelB, noise_seed, steps, interval, cfg, sampler_name, scheduler, positiveA, negativeA, positiveB, negativeB, latent_image, denoise=1.0):
+        force_full_denoise = False
+        disable_noise = False
+        latest_latent = latent_image
+        latest_model = "B"
+        for i in range(0, steps, interval):
+            if i>0:
+                disable_noise = True
+            print(f"Sampling Steps {i} to {i+interval} out of {steps} with noise {'enabled' if not disable_noise else 'disabled'} on model {latest_model}")
+            latest_model = "A" if latest_model == "B" else "B"
+            model = modelA if latest_model == "A" else modelB
+            latest_positive = positiveA if latest_model == "A" else positiveB
+            latest_negative = negativeA if latest_model == "A" else negativeB
+            latest_latent = common_ksampler(model, noise_seed, steps, cfg, sampler_name, scheduler, latest_positive, latest_negative, latest_latent, denoise=denoise, disable_noise=disable_noise, start_step=i, last_step=i+interval, force_full_denoise=force_full_denoise)[0]
+        return (latest_latent, )
 
 NODE_CLASS_MAPPINGS = {
     "CLIPTextEncodeSDXL-Multi-IO": CLIPTextEncodeSDXL_Multi_IO,
     "CLIPTextEncodeSDXL-Pipe": CLIPTextEncodeSDXL_Pipe,
     "Empty Latent Image from Aspect-Ratio": EmptyLatentImageFromAspectRatio,
     "Random Find and Replace": RandomFindAndReplace,
-    "VAE Decode Pipe": VAEDecodePipe,
-    "VAE Decode Tiled Pipe": VAEDecodeTiledPipe,
-    "VAE Encode Pipe": VAEEncodePipe,
-    "VAE Encode Tiled Pipe": VAEEncodeTiledPipe,
+    "Interval Sampler": IntervalSampler
 }
